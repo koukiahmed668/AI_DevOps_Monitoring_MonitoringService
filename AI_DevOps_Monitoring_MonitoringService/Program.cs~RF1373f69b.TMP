@@ -1,0 +1,63 @@
+
+using AI_DevOps_Monitoring_MonitoringService.Application.Interfaces;
+using AI_DevOps_Monitoring_MonitoringService.Application.Services;
+using AI_DevOps_Monitoring_MonitoringService.BackgroundTasks;
+using AI_DevOps_Monitoring_MonitoringService.Infrastructure.DbContexts;
+using AI_DevOps_Monitoring_MonitoringService.Infrastructure.Repositories;
+using AI_DevOps_Monitoring_MonitoringService.SignalR.Hubs;
+using Microsoft.EntityFrameworkCore;
+
+namespace AI_DevOps_Monitoring_MonitoringService
+{
+    public class Program
+    {
+        public static void Main(string[] args)
+        {
+            var builder = WebApplication.CreateBuilder(args);
+
+            // Configuration for the Monitoring Database
+            var monitoringConnectionString = builder.Configuration.GetConnectionString("MonitoringConnection");
+
+            // Add DbContext for Monitoring
+            builder.Services.AddDbContext<AppDbContext>(options =>
+                options.UseMySQL(monitoringConnectionString));
+
+            // Add repository
+            builder.Services.AddScoped<IMetricRepository, MetricRepository>();
+            builder.Services.AddScoped<IMonitoringService, MonitoringService>();
+
+            builder.Services.AddHostedService<MetricCollector>();
+
+
+
+            // Add services to the container.
+            builder.Services.AddSignalR();
+
+            builder.Services.AddControllers();
+            // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+            builder.Services.AddEndpointsApiExplorer();
+            builder.Services.AddSwaggerGen();
+
+            var app = builder.Build();
+
+            // Configure the HTTP request pipeline.
+            if (app.Environment.IsDevelopment())
+            {
+                app.UseSwagger();
+                app.UseSwaggerUI();
+            }
+
+            app.MapHub<MonitoringHub>("/monitoringHub");
+
+
+            app.UseHttpsRedirection();
+
+            app.UseAuthorization();
+
+
+            app.MapControllers();
+
+            app.Run();
+        }
+    }
+}

@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.11.35312.102
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AI_DevOps_Monitoring_MonitoringService", "AI_DevOps_Monitoring_MonitoringService\AI_DevOps_Monitoring_MonitoringService.csproj", "{91201D7D-70FB-43B9-8ED5-CB65183BDB4E}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{91201D7D-70FB-43B9-8ED5-CB65183BDB4E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{91201D7D-70FB-43B9-8ED5-CB65183BDB4E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{91201D7D-70FB-43B9-8ED5-CB65183BDB4E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{91201D7D-70FB-43B9-8ED5-CB65183BDB4E}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {B9367337-0CBE-49E5-8289-746DE73C3559}
+	EndGlobalSection
+EndGlobal
