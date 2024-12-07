@@ -51,7 +51,7 @@ namespace AI_DevOps_Monitoring_MonitoringService
                 options.AddPolicy("AllowAngularApp", policy =>
                 {
                     policy
-                        .WithOrigins("http://localhost:4200") // Your Angular app's URL
+                        .WithOrigins("http://localhost:4200")
                         .AllowAnyHeader()
                         .AllowAnyMethod()
                         .AllowCredentials(); // Allow credentials for SignalR
