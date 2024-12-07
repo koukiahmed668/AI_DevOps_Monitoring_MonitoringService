@@ -50,15 +50,6 @@ namespace AI_DevOps_Monitoring_MonitoringService.controllers
             return Ok();
         }
 
-        [HttpPost("start")]
-        public IActionResult StartMonitoring([FromBody] string containerId)
-        {
-            if (string.IsNullOrEmpty(containerId))
-            {
-                return BadRequest("Container ID cannot be null or empty.");
-            }
-
-            return Ok($"Started monitoring for container {containerId}");
-        }
+      
     }
 }

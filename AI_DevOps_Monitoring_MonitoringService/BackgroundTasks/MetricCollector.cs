@@ -1,8 +1,13 @@
-﻿using AI_DevOps_Monitoring_MonitoringService.Application.Interfaces;
-using AI_DevOps_Monitoring_MonitoringService.SignalR.Hubs;
+﻿using InfluxDB.Client;
+using InfluxDB.Client.Api.Domain;
 using Microsoft.AspNetCore.SignalR;
+using AI_DevOps_Monitoring_MonitoringService.SignalR.Hubs;
+using AI_DevOps_Monitoring_MonitoringService.Application.Interfaces;
 using System.Diagnostics;
-using System.IO;
+using InfluxDB.Client.Writes;
+using Docker.DotNet;
+using Docker.DotNet.Models;
+using Newtonsoft.Json;
 
 namespace AI_DevOps_Monitoring_MonitoringService.BackgroundTasks
 {
@@ -11,169 +16,157 @@ namespace AI_DevOps_Monitoring_MonitoringService.BackgroundTasks
         private readonly IServiceScopeFactory _serviceScopeFactory;
         private readonly ILogger<MetricCollector> _logger;
         private readonly IHubContext<MonitoringHub> _hubContext;
+        private readonly HttpClient _httpClient = new HttpClient();
+        private readonly IInfluxDBClient _influxDbClient;
+        private readonly DockerClient _dockerClient;
+
         private readonly string _csvFilePath = "metrics_log.csv";
 
-        private string? _currentContainerId; // For storing the container ID
-
-        // Variables to accumulate metrics and calculate averages
-        private double _cpuUsageSum = 0;
-        private double _memoryUsageSum = 0;
-        private double _diskUsageSum = 0;
-        private int _metricCount = 0;
-
-        public MetricCollector(IServiceScopeFactory serviceScopeFactory, ILogger<MetricCollector> logger, IHubContext<MonitoringHub> hubContext)
+        public MetricCollector(IServiceScopeFactory serviceScopeFactory, ILogger<MetricCollector> logger, IHubContext<MonitoringHub> hubContext, IInfluxDBClient influxDbClient)
         {
             _serviceScopeFactory = serviceScopeFactory;
             _logger = logger;
             _hubContext = hubContext;
-        }
-
-        public void StartMonitoringContainer(string containerId)
-        {
-            _currentContainerId = containerId;
-            _logger.LogInformation("Monitoring started for container: {ContainerId}", containerId);
+            _influxDbClient = influxDbClient;
+            _dockerClient = new DockerClientConfiguration(new Uri("unix:///var/run/docker.sock")).CreateClient();
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            if (!File.Exists(_csvFilePath))
+            var writeApi = _influxDbClient.GetWriteApiAsync();
+
+            string org = "kouki";
+            string bucket = "metrics";
+
+            if (!System.IO.File.Exists(_csvFilePath))
             {
-                File.AppendAllText(_csvFilePath, "Timestamp, CPU Usage (%), Memory Usage (MB), Disk Usage (%)\n");
+                System.IO.File.AppendAllText(_csvFilePath, "Timestamp, Metric Name, Metric Category, Metric Value\n");
             }
 
             while (!stoppingToken.IsCancellationRequested)
             {
-                if (string.IsNullOrEmpty(_currentContainerId))
+                using (var scope = _serviceScopeFactory.CreateScope())
                 {
-                    _logger.LogWarning("No container ID specified. Waiting for input...");
-                    await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
-                    continue;
-                }
+                    var metricRepository = scope.ServiceProvider.GetRequiredService<IMetricRepository>();
 
-                try
-                {
-                    // Replace Docker Stats API call with command-line Docker Stats
-                    var stats = GetContainerStatsFromCommandLine(_currentContainerId);
-
-                    if (stats == null)
-                    {
-                        _logger.LogError("Failed to get container stats for {ContainerId}", _currentContainerId);
-                        continue;
-                    }
-
-                    // Access tuple values correctly by index
-                    var cpuUsage = stats.Value.Item1; // CpuUsage
-                    var memoryUsage = stats.Value.Item2; // MemoryUsage
-                    var diskUsage = stats.Value.Item3; // DiskUsage
+                    var cpuUsage = GetCpuUsage();
+                    var memoryUsage = GC.GetTotalMemory(false) / (1024 * 1024);
+                    var diskUsage = GetDiskUsage();
 
                     var timestamp = DateTime.UtcNow;
 
-                    var metrics = new[]
+                    var systemMetrics = new[]
                     {
                         new { Name = "CPU Usage", Value = cpuUsage.ToString("F2"), Category = "CPU" },
                         new { Name = "Memory Usage", Value = memoryUsage.ToString("F2"), Category = "Memory" },
                         new { Name = "Disk Usage", Value = diskUsage.ToString("F2"), Category = "Disk" }
                     };
 
-                    // Accumulate metrics for averaging
-                    _cpuUsageSum += cpuUsage;
-                    _memoryUsageSum += memoryUsage;
-                    _diskUsageSum += diskUsage;
-                    _metricCount++;
+                    var containerMetrics = await GetContainerMetricsAsync(stoppingToken);
 
-                    // Broadcast metrics via SignalR
-                    foreach (var metric in metrics)
+                    foreach (var metric in systemMetrics)
                     {
-                        await _hubContext.Clients.All.SendAsync("ReceiveMetricUpdate", metric.Name, metric.Value);
+                        var point = PointData
+                            .Measurement("system_metrics")
+                            .Tag("host", "host1")
+                            .Field(metric.Category.ToLower() + "_usage", double.Parse(metric.Value))
+                            .Timestamp(timestamp, WritePrecision.Ms);
+
+                        await writeApi.WritePointAsync(point, bucket, org);
                     }
 
-                    // Log metrics and calculate averages every 50 metrics
-                    if (_metricCount >= 50)
+                    foreach (var containerMetric in containerMetrics)
                     {
-                        var avgCpuUsage = _cpuUsageSum / _metricCount;
-                        var avgMemoryUsage = _memoryUsageSum / _metricCount;
-                        var avgDiskUsage = _diskUsageSum / _metricCount;
+                        var point = PointData
+                            .Measurement("container_metrics")
+                            .Tag("container_name", containerMetric.ContainerName)
+                            .Field("cpu_usage", containerMetric.CpuUsage)
+                            .Field("memory_usage", containerMetric.MemoryUsage)
+                            .Field("memory_percentage", containerMetric.MemoryPercentage)
+                            .Timestamp(timestamp, WritePrecision.Ms);
 
-                        var aggregatedMetrics = new
-                        {
-                            Timestamp = timestamp,
-                            CpuAverage = avgCpuUsage.ToString("F2"),
-                            MemoryAverage = avgMemoryUsage.ToString("F2"),
-                            DiskAverage = avgDiskUsage.ToString("F2")
-                        };
-
-                        using var scope = _serviceScopeFactory.CreateScope();
-                        var metricRepository = scope.ServiceProvider.GetRequiredService<IMetricRepository>();
-                        await metricRepository.AddAsync(new Domain.Models.Metric
-                        {
-                            Name = "Aggregated Metrics",
-                            Value = $"{avgCpuUsage:F2}, {avgMemoryUsage:F2}, {avgDiskUsage:F2}",
-                            Timestamp = timestamp,
-                            Category = "System"
-                        });
-
-                        var csvLine = $"{timestamp},{avgCpuUsage:F2},{avgMemoryUsage:F2},{avgDiskUsage:F2}";
-                        File.AppendAllText(_csvFilePath, csvLine + Environment.NewLine);
-
-                        _logger.LogInformation("Aggregated Metrics collected: CPU={CPU}, Memory={Memory}, Disk={Disk}",
-                            avgCpuUsage, avgMemoryUsage, avgDiskUsage);
-
-                        _cpuUsageSum = 0;
-                        _memoryUsageSum = 0;
-                        _diskUsageSum = 0;
-                        _metricCount = 0;
+                        await writeApi.WritePointAsync(point, bucket, org);
                     }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error monitoring container: {ContainerId}", _currentContainerId);
-                }
 
-                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                    await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+                }
             }
         }
 
-        // Use the command line to get Docker stats
-        private (double CpuUsage, double MemoryUsage, double DiskUsage)? GetContainerStatsFromCommandLine(string containerId)
+        private double GetDiskUsage()
         {
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = "docker",
-                Arguments = $"stats {containerId} --no-stream --format \"{{{{.CPUPerc}}}} {{.MemUsage}} {{.BlockIOLimit}}\"",
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
             try
             {
-                using var process = Process.Start(startInfo);
-                using var reader = process?.StandardOutput;
-
-                if (reader != null)
-                {
-                    var output = reader.ReadLine();
-                    if (string.IsNullOrEmpty(output))
-                    {
-                        return null;
-                    }
-
-                    var stats = output.Split(' ');
-
-                    var cpuUsage = double.Parse(stats[0].Replace("%", ""));
-                    var memoryUsageParts = stats[1].Split('/');
-                    var memoryUsage = double.Parse(memoryUsageParts[0].Replace("MiB", "").Trim());
-                    var diskUsage = double.Parse(stats[2].Replace("B", "").Trim());
-
-                    return (cpuUsage, memoryUsage, diskUsage);
-                }
+                var driveInfo = new DriveInfo("/");
+                var totalSpace = driveInfo.TotalSize;
+                var freeSpace = driveInfo.AvailableFreeSpace;
+                var usedSpace = totalSpace - freeSpace;
+                return (double)usedSpace / totalSpace * 100;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error fetching container stats from command line.");
+                _logger.LogError("Error getting disk usage: {Message}", ex.Message);
+                return 0;
+            }
+        }
+
+        private async Task<IEnumerable<dynamic>> GetContainerMetricsAsync(CancellationToken cancellationToken)
+        {
+            var containerStats = new List<dynamic>();
+            var containers = await _dockerClient.Containers.ListContainersAsync(new ContainersListParameters { All = false });
+
+            foreach (var container in containers)
+            {
+                using (var statsResponse = await _dockerClient.Containers.GetContainerStatsAsync(
+                    container.ID,
+                    new ContainerStatsParameters { Stream = false },
+                    cancellationToken))
+                {
+                    using (var streamReader = new StreamReader(statsResponse))
+                    {
+                        var statsJson = await streamReader.ReadToEndAsync();
+                        var stats = JsonConvert.DeserializeObject<dynamic>(statsJson);
+
+                        var cpuDelta = (double)(stats.cpu_stats.cpu_usage.total_usage - stats.precpu_stats.cpu_usage.total_usage);
+                        var systemCpuDelta = (double)(stats.cpu_stats.system_cpu_usage - stats.precpu_stats.system_cpu_usage);
+                        var cpuUsage = (cpuDelta / systemCpuDelta) * 100.0;
+
+                        var memoryUsage = (double)stats.memory_stats.usage / (1024 * 1024);
+                        var memoryLimit = (double)stats.memory_stats.limit / (1024 * 1024);
+                        var memoryPercentage = (memoryUsage / memoryLimit) * 100;
+
+                        containerStats.Add(new
+                        {
+                            ContainerName = container.Names[0].Trim('/'),
+                            CpuUsage = cpuUsage,
+                            MemoryUsage = memoryUsage,
+                            MemoryPercentage = memoryPercentage
+                        });
+                    }
+                }
             }
 
-            return null;
+            return containerStats;
+        }
+
+        public static double GetCpuUsage()
+        {
+            var process = Process.GetCurrentProcess();
+            var totalCpuBefore = process.TotalProcessorTime.TotalMilliseconds;
+            var sw = Stopwatch.StartNew();
+            Thread.Sleep(1000);
+            sw.Stop();
+            var totalCpuAfter = process.TotalProcessorTime.TotalMilliseconds;
+            var cpuUsage = (totalCpuAfter - totalCpuBefore) / (Environment.ProcessorCount * sw.ElapsedMilliseconds);
+            return cpuUsage * 100;
+        }
+
+        public override void Dispose()
+        {
+            _logger.LogInformation("Disposing MetricCollector resources...");
+            _dockerClient?.Dispose();
+            _httpClient?.Dispose();
+            base.Dispose();
         }
     }
 }

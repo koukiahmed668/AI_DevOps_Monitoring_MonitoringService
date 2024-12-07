@@ -5,6 +5,8 @@ using AI_DevOps_Monitoring_MonitoringService.Application.Services;
 using AI_DevOps_Monitoring_MonitoringService.Infrastructure.DbContexts;
 using AI_DevOps_Monitoring_MonitoringService.Infrastructure.Repositories;
 using AI_DevOps_Monitoring_MonitoringService.BackgroundTasks;
+using InfluxDB.Client;
+
 
 namespace AI_DevOps_Monitoring_MonitoringService
 {
@@ -14,10 +16,10 @@ namespace AI_DevOps_Monitoring_MonitoringService
         {
             var builder = WebApplication.CreateBuilder(args);
 
-            builder.WebHost.ConfigureKestrel(serverOptions =>
+            /*builder.WebHost.ConfigureKestrel(serverOptions =>
             {
                 serverOptions.ListenAnyIP(8080); // Listen on all interfaces for port 8080
-            });
+            });*/
 
             // Configuration for the Monitoring Database
             var monitoringConnectionString = builder.Configuration.GetConnectionString("MonitoringConnection");
@@ -25,6 +27,16 @@ namespace AI_DevOps_Monitoring_MonitoringService
             // Add DbContext for Monitoring
             builder.Services.AddDbContext<AppDbContext>(options =>
                 options.UseMySQL(monitoringConnectionString));
+
+
+            var influxDbUrl = "http://localhost:8086";  // Replace with your InfluxDB URL
+            var token = "oE2ChrZaWP9KHj8ytb9nGop1UjkL7H4ubuMuYrZOO2b6B1MgtgE8PNDCR6K1cuf-e0oCvjDkvWDGh554gmYvLw=="; // Replace with your InfluxDB token
+            const string org = "kouki";
+            const string bucket = "metrics";
+
+            // Register InfluxDB Client
+            builder.Services.AddSingleton<IInfluxDBClient>(sp =>
+                InfluxDBClientFactory.Create(influxDbUrl, token));
 
             // Add repository
             builder.Services.AddScoped<IMetricRepository, MetricRepository>();
@@ -56,14 +68,14 @@ namespace AI_DevOps_Monitoring_MonitoringService
             var app = builder.Build();
 
             // Configure the HTTP request pipeline.
-            if (app.Environment.IsDevelopment() || Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true")
+            if (app.Environment.IsDevelopment()/* || Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true"*/)
             {
                 // Enable Swagger for Docker and Development
                 app.UseSwagger();
                 app.UseSwaggerUI();
             }
 
-            // Disable HTTPS redirection for Docker environments
+            /* Disable HTTPS redirection for Docker environments
             if (Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true")
             {
                 // Don't redirect HTTP to HTTPS when running inside Docker
@@ -72,7 +84,7 @@ namespace AI_DevOps_Monitoring_MonitoringService
             else
             {
                 app.UseHttpsRedirection();
-            }
+            }*/
 
             // Apply the CORS policy
             app.UseCors("AllowAngularApp");
