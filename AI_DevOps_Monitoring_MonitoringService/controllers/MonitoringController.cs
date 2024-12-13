@@ -1,6 +1,5 @@
 ﻿using AI_DevOps_Monitoring_MonitoringService.Application.Interfaces;
 using AI_DevOps_Monitoring_MonitoringService.Application.Services;
-using AI_DevOps_Monitoring_MonitoringService.BackgroundTasks;
 using AI_DevOps_Monitoring_MonitoringService.Domain.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;

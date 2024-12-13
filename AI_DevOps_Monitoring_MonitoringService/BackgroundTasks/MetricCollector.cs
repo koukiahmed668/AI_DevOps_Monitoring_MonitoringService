@@ -34,7 +34,6 @@ namespace AI_DevOps_Monitoring_MonitoringService.BackgroundTasks
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             var writeApi = _influxDbClient.GetWriteApiAsync();
-
             string org = "kouki";
             string bucket = "metrics";
 
@@ -57,10 +56,10 @@ namespace AI_DevOps_Monitoring_MonitoringService.BackgroundTasks
 
                     var systemMetrics = new[]
                     {
-                        new { Name = "CPU Usage", Value = cpuUsage.ToString("F2"), Category = "CPU" },
-                        new { Name = "Memory Usage", Value = memoryUsage.ToString("F2"), Category = "Memory" },
-                        new { Name = "Disk Usage", Value = diskUsage.ToString("F2"), Category = "Disk" }
-                    };
+                new { Name = "CPU Usage", Value = cpuUsage.ToString("F2"), Category = "CPU" },
+                new { Name = "Memory Usage", Value = memoryUsage.ToString("F2"), Category = "Memory" },
+                new { Name = "Disk Usage", Value = diskUsage.ToString("F2"), Category = "Disk" }
+            };
 
                     var containerMetrics = await GetContainerMetricsAsync(stoppingToken);
 
@@ -86,12 +85,16 @@ namespace AI_DevOps_Monitoring_MonitoringService.BackgroundTasks
                             .Timestamp(timestamp, WritePrecision.Ms);
 
                         await writeApi.WritePointAsync(point, bucket, org);
+
+   
+
                     }
 
                     await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
                 }
             }
         }
+
 
         private double GetDiskUsage()
         {
@@ -148,6 +151,9 @@ namespace AI_DevOps_Monitoring_MonitoringService.BackgroundTasks
 
             return containerStats;
         }
+
+       
+
 
         public static double GetCpuUsage()
         {

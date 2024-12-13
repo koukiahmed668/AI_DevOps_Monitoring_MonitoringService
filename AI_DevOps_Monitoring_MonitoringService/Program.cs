@@ -29,8 +29,8 @@ namespace AI_DevOps_Monitoring_MonitoringService
                 options.UseMySQL(monitoringConnectionString));
 
 
-            var influxDbUrl = "http://localhost:8086";  // Replace with your InfluxDB URL
-            var token = "oE2ChrZaWP9KHj8ytb9nGop1UjkL7H4ubuMuYrZOO2b6B1MgtgE8PNDCR6K1cuf-e0oCvjDkvWDGh554gmYvLw=="; // Replace with your InfluxDB token
+            var influxDbUrl = "http://localhost:8086";  // Use the container name as the hostname
+            var token = "KmQHjudYgS6-77_FUCPEkv-uzI-mHgYSezLPuEClVKWBuKnqale9S7LHkoqjTvHBudSpPua1iV0qJK9nob0LsA=="; // Replace with your InfluxDB token
             const string org = "kouki";
             const string bucket = "metrics";
 
